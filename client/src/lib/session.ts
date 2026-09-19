@@ -7,6 +7,13 @@ export function getApiUrl(): string {
     return clean.endsWith('/api') ? clean : `${clean}/api`;
   }
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
+  
+  // When running locally on LAN / Wi-Fi IP (e.g. 192.168.x.x), auto-point to port 5001 on that host
+  if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
+    if (window.location.protocol === 'http:') {
+      return `http://${window.location.hostname}:5001/api`;
+    }
+  }
   return 'http://localhost:5001/api';
 }
 
@@ -18,6 +25,13 @@ export function getSocketUrl(): string {
   }
   if (import.meta.env.VITE_SOCKET_URL) return import.meta.env.VITE_SOCKET_URL;
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '');
+  
+  // When running locally on LAN / Wi-Fi IP (e.g. 192.168.x.x), auto-point to port 5001 on that host
+  if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
+    if (window.location.protocol === 'http:') {
+      return `http://${window.location.hostname}:5001`;
+    }
+  }
   return 'http://localhost:5001';
 }
 
