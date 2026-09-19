@@ -9,8 +9,23 @@ properties, and challenge opponents to code duels instead of paying rent.
 - **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS (`client/`)
 - **Backend**: Node.js + Express + Socket.io (`server/`)
 - **Database**: MongoDB via Mongoose, with an in-memory fallback store if MongoDB isn't connected
-- **Code Execution**: Judge0 API (via RapidAPI)
-- **Auth**: Firebase Authentication (Google / Microsoft OAuth)
+- **Code Execution**: Judge0 API (via RapidAPI), with a client-side JS fallback when no key is set
+- **Auth**: username-only (no email/password) — the backend find-or-creates a player profile keyed by username and persists stats
+
+## Quick start (local)
+
+```bash
+# 1. Start MongoDB (Docker — persistent volume)
+docker run -d --name codeopoly-mongo -p 27017:27017 -v codeopoly-mongo-data:/data/db mongo:7
+
+# 2. Backend
+cd server && npm install && npm run dev      # http://localhost:5001
+
+# 3. Frontend (new terminal)
+cd client && npm install && npm run dev      # http://localhost:3000
+```
+
+Then open http://localhost:3000 → pick a username → create/join a game.
 
 ```
 CodeOpoly/

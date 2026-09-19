@@ -1,0 +1,212 @@
+/* ============================================================
+   CODEPOLY pixel-art theme
+   Mario "World 1-1" look: sky, clouds, hills, cream frames,
+   chunky pixel borders, Press Start 2P headings.
+   ============================================================ */
+
+:root {
+  --px-font: 'Press Start 2P', system-ui, sans-serif;
+  --px-font-body: 'VT323', 'Press Start 2P', monospace;
+
+  /* Mario world palette */
+  --px-sky: #5c94fc;
+  --px-sky-2: #6ba6ff;
+  --px-hill: #3aa63a;
+  --px-hill-dark: #2c8a2c;
+  --px-cream: #f7f2e0;
+  --px-cream-line: #e6dcc0;
+  --px-ink: #1a1a2e;
+  --px-ink-soft: #2a2a44;
+  --px-brick: #b5651d;
+
+  /* Tile category colors */
+  --px-code: #4caf50;    /* green - CODE */
+  --px-quiz: #ffd23f;    /* yellow - QUIZ */
+  --px-debug: #e08a2e;   /* orange - DEBUG */
+  --px-logic: #ffcf33;   /* gold - LOGIC */
+  --px-bonus: #9b5de5;   /* purple - BONUS */
+  --px-battle: #ef4444;  /* red - BATTLE */
+  --px-boss: #201a2e;    /* near-black - BOWSER */
+  --px-start: #2ecc71;   /* start green */
+  --px-arrow: #7ec8ff;   /* light blue arrows */
+
+  --px-red: #e63946;
+  --px-shadow: rgba(0, 0, 0, 0.35);
+}
+
+/* ---------- fonts ---------- */
+.px-head {
+  font-family: var(--px-font);
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+}
+.px-body {
+  font-family: var(--px-font-body);
+  font-size: 1.25rem;
+  letter-spacing: 0.5px;
+}
+
+/* crisp pixel rendering for any pixel imagery */
+.px-crisp {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ---------- chunky pixel border (via layered box-shadow) ---------- */
+.px-border {
+  border: 4px solid var(--px-ink);
+  box-shadow:
+    0 4px 0 0 var(--px-shadow),
+    inset -4px -4px 0 0 rgba(0, 0, 0, 0.12),
+    inset 4px 4px 0 0 rgba(255, 255, 255, 0.35);
+}
+
+/* ---------- Mario sky background ---------- */
+.px-sky-bg {
+  background:
+    linear-gradient(180deg, var(--px-sky) 0%, var(--px-sky-2) 70%, #8fc0ff 100%);
+  position: relative;
+  overflow: hidden;
+}
+/* ground / hills strip */
+.px-sky-bg::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 14%;
+  background:
+    radial-gradient(60px 60px at 12% 100%, var(--px-hill) 0 60px, transparent 61px),
+    radial-gradient(90px 90px at 30% 120%, var(--px-hill-dark) 0 90px, transparent 91px),
+    radial-gradient(70px 70px at 70% 110%, var(--px-hill) 0 70px, transparent 71px),
+    radial-gradient(110px 110px at 88% 125%, var(--px-hill-dark) 0 110px, transparent 111px),
+    linear-gradient(180deg, transparent 0%, #caa25a 40%, #b5651d 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* floating pixel clouds */
+.px-cloud {
+  position: absolute;
+  background: #ffffff;
+  border-radius: 999px;
+  box-shadow:
+    24px 0 0 0 #fff,
+    48px 0 0 0 #fff,
+    24px -18px 0 0 #fff,
+    -6px 0 0 6px rgba(255, 255, 255, 0.8);
+  opacity: 0.9;
+  z-index: 0;
+  animation: px-drift linear infinite;
+}
+@keyframes px-drift {
+  from { transform: translateX(-10vw); }
+  to   { transform: translateX(110vw); }
+}
+
+/* ---------- panels ---------- */
+.px-panel {
+  background: var(--px-cream);
+  color: var(--px-ink);
+  border: 4px solid var(--px-ink);
+  box-shadow:
+    0 6px 0 0 var(--px-shadow),
+    inset -4px -4px 0 0 var(--px-cream-line),
+    inset 4px 4px 0 0 #fffdf5;
+}
+.px-panel-dark {
+  background: var(--px-ink);
+  color: var(--px-cream);
+  border: 4px solid #000;
+  box-shadow:
+    0 6px 0 0 var(--px-shadow),
+    inset -4px -4px 0 0 rgba(0, 0, 0, 0.5),
+    inset 4px 4px 0 0 rgba(255, 255, 255, 0.12);
+}
+
+/* ---------- buttons ---------- */
+.px-btn {
+  font-family: var(--px-font);
+  font-size: 0.85rem;
+  color: #fff;
+  background: var(--px-code);
+  border: 4px solid var(--px-ink);
+  padding: 12px 18px;
+  cursor: pointer;
+  box-shadow: 0 5px 0 0 rgba(0, 0, 0, 0.4), inset 2px 2px 0 0 rgba(255, 255, 255, 0.35);
+  transition: transform 0.05s ease, box-shadow 0.05s ease;
+  text-transform: uppercase;
+  image-rendering: pixelated;
+}
+.px-btn:hover { filter: brightness(1.08); }
+.px-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 0 rgba(0, 0, 0, 0.4), inset 2px 2px 0 0 rgba(255, 255, 255, 0.25);
+}
+.px-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.px-btn-red { background: var(--px-red); }
+.px-btn-yellow { background: var(--px-quiz); color: var(--px-ink); }
+.px-btn-dark { background: var(--px-ink-soft); }
+.px-btn-ghost { background: transparent; color: var(--px-ink); }
+
+/* ---------- text inputs ---------- */
+.px-input {
+  font-family: var(--px-font-body);
+  font-size: 1.4rem;
+  width: 100%;
+  padding: 12px 14px;
+  color: var(--px-ink);
+  background: #fffdf5;
+  border: 4px solid var(--px-ink);
+  outline: none;
+  box-shadow: inset 3px 3px 0 0 rgba(0, 0, 0, 0.12);
+}
+.px-input::placeholder { color: #9a917a; }
+.px-input:focus { box-shadow: inset 3px 3px 0 0 rgba(0, 0, 0, 0.12), 0 0 0 4px rgba(255, 210, 63, 0.6); }
+
+/* ---------- the yellow ? block logo ---------- */
+.px-qblock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: var(--px-quiz);
+  border: 4px solid var(--px-ink);
+  color: var(--px-ink);
+  font-family: var(--px-font);
+  box-shadow: inset -3px -3px 0 0 #c99b1e, inset 3px 3px 0 0 #fff2a8;
+}
+
+/* ---------- hearts (lives) ---------- */
+.px-heart {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  background: var(--px-red);
+  clip-path: path('M9 16 L1 8 A3 3 0 0 1 9 4 A3 3 0 0 1 17 8 Z');
+  filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));
+}
+.px-heart-empty { background: #6b7280; opacity: 0.4; }
+
+/* ---------- XP bar ---------- */
+.px-xp {
+  height: 14px;
+  background: #d8cfb4;
+  border: 3px solid var(--px-ink);
+  overflow: hidden;
+}
+.px-xp > span {
+  display: block;
+  height: 100%;
+  background: repeating-linear-gradient(90deg, #4caf50 0 8px, #3d8f40 8px 12px);
+}
+
+/* pixel scrollbars inside cream panels */
+.px-panel ::-webkit-scrollbar { width: 10px; }
+.px-panel ::-webkit-scrollbar-thumb { background: var(--px-ink); border: 2px solid var(--px-cream); }
+.px-panel ::-webkit-scrollbar-track { background: var(--px-cream-line); }
+
+/* utility: remove default focus ring override for pixel theme */
+.px-theme *:focus-visible { outline: 3px solid var(--px-quiz); outline-offset: 2px; }

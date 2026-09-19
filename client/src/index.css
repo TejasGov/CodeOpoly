@@ -2,6 +2,7 @@
 @import './styles/game.css';
 @import './styles/yc-ready.css';
 @import './styles/laptop-optimized.css';
+@import './styles/pixel.css';
 
 @tailwind base;
 @tailwind components;

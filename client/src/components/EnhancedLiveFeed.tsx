@@ -132,7 +132,7 @@ export default function EnhancedLiveFeed({ events, maxEvents = 20, currentPlayer
             animate={{ opacity: 1, x: 0, scale: 1 }}
             transition={{ delay: idx * 0.03, type: 'spring', stiffness: 200 }}
             whileHover={{ scale: 1.02, x: 4 }}
-            className={`bg-gradient-to-r ${EVENT_COLORS[event.type]} rounded-xl p-3 sm:p-3.5 md:p-4 border-2 ${getEventBorderColor(event.type)} hover:border-opacity-100 transition-all cursor-pointer shadow-lg`}
+            className={`bg-gradient-to-r ${EVENT_COLORS[event.type]} rounded-lg p-2 border-2 ${getEventBorderColor(event.type)} hover:border-opacity-100 transition-all cursor-pointer shadow-lg`}
             style={{
               background: `linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.95))`,
               backdropFilter: 'blur(10px)',
@@ -143,8 +143,8 @@ export default function EnhancedLiveFeed({ events, maxEvents = 20, currentPlayer
                 : '0 4px 12px rgba(0,0,0,0.4)',
             }}
           >
-            <div className="flex items-start gap-3 sm:gap-4">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-white/10 rounded-full flex items-center justify-center flex-shrink-0 text-base sm:text-lg md:text-xl backdrop-blur-sm border border-white/20">
+            <div className="flex items-start gap-2">
+              <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center flex-shrink-0 text-sm backdrop-blur-sm border border-white/20">
                 {EVENT_ICONS[event.type] || '⭐'}
               </div>
               <div className="flex-1 min-w-0">

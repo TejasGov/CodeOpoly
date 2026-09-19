@@ -5,6 +5,7 @@ import cors from 'cors';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import gameRoutes from './routes/gameRoutes.js';
+import authRoutes from './routes/authRoutes.js';
 import { setupSocketHandlers } from './socket/socketHandlers.js';
 
 dotenv.config();
@@ -37,6 +38,7 @@ app.use(cors({
 app.use(express.json());
 
 // Routes
+app.use('/api', authRoutes);
 app.use('/api', gameRoutes);
 
 // MongoDB connection

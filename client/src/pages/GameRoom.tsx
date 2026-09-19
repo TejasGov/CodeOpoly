@@ -3,7 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import { toast, Toaster } from 'react-hot-toast';
-import EnhancedMonopolyBoard from '../components/EnhancedMonopolyBoard';
+import PixelBoard from '../components/PixelBoard';
 import CurrentActionDisplay from '../components/CurrentActionDisplay';
 import FullCodeChallengeModal from '../components/FullCodeChallengeModal';
 import CodeDuelModal from '../components/CodeDuelModal';
@@ -13,8 +13,6 @@ import DebuggingCardModal from '../components/DebuggingCardModal';
 import PropertyCardModal from '../components/PropertyCardModal';
 import { NotificationToast, useNotifications } from '../components/NotificationToast';
 import MoneyTransferEffect, { FloatingMoneyChange } from '../components/MoneyTransferEffect';
-import CameraController from '../components/camera/CameraController';
-import IsometricToggle, { IsometricView } from '../components/camera/IsometricToggle';
 import { useGameEffects } from '../hooks/useGameEffects';
 import DiceParticles from '../components/particles/DiceParticles';
 import ConfettiParticles from '../components/particles/ConfettiParticles';
@@ -909,13 +907,13 @@ export default function GameRoom() {
 
   if (!gameState || !gameState.boardState || gameState.boardState.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center flex-col gap-4">
+      <div className="px-theme px-sky-bg min-h-screen flex items-center justify-center flex-col gap-4">
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-          className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full"
+          className="w-16 h-16 border-4 border-white border-t-transparent rounded-full"
         />
-        <div className="text-white text-lg font-mono">Loading game board...</div>
+        <div className="px-head text-white" style={{ fontSize: '0.9rem', textShadow: '2px 2px 0 rgba(0,0,0,0.4)' }}>LOADING WORLD...</div>
         {socket && (
           <div className="text-white/60 text-sm font-mono">
             Socket: {socket.connected ? '✅ Connected' : '❌ Disconnected'}
@@ -961,8 +959,8 @@ export default function GameRoom() {
     : 0;
 
   return (
-    <div className="game-container">
-      <Toaster 
+    <div className="game-container px-theme px-sky-bg">
+      <Toaster
         position="top-right"
         toastOptions={{
           duration: 4000,
@@ -989,7 +987,7 @@ export default function GameRoom() {
         <div className="container mx-auto px-2 py-1.5 flex items-center justify-between">
           {/* Left: CODEOPOLY + Room Code */}
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-bold text-white font-sans">CODEOPOLY</h1>
+            <h1 className="px-head text-white" style={{ fontSize: '0.8rem' }}><span style={{ color: '#ff6b6b' }}>CODE</span>POLY</h1>
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(gameState.roomCode);
@@ -1006,7 +1004,7 @@ export default function GameRoom() {
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 px-2.5 py-0.5 bg-slate-700/50 rounded-full border border-slate-600">
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
-              <span className="text-xs text-white/80 font-mono">CODEOPOLY ACTIVE</span>
+              <span className="text-xs text-white/80 font-mono">CODEPOLY ACTIVE</span>
             </div>
             <span className="text-xs text-white/60 font-mono">• {gameState.players.length} players</span>
           </div>
@@ -1133,21 +1131,16 @@ export default function GameRoom() {
                   </div>
                 ) : null;
               })()}
-              <div className="relative w-full flex-1 flex flex-col items-center justify-center bg-gradient-to-br from-slate-900/50 via-slate-800/50 to-slate-900/50 rounded-lg border border-emerald-400/20 shadow-xl backdrop-blur-sm p-2 min-h-0" style={{ zIndex: 20 }}>
-                <CameraController enableParallax={true} enableShake={true}>
-                  <IsometricView>
-                    <IsometricToggle />
-                    <EnhancedMonopolyBoard
-                      boardState={gameState.boardState}
-                      players={gameState.players}
-                      currentPlayer={currentPlayer}
-                      onTileClick={(property) => {
-                        setLandedProperty(property);
-                      }}
-                      landedPosition={landedPosition}
-                    />
-                  </IsometricView>
-                </CameraController>
+              <div className="relative w-full flex-1 flex flex-col items-center justify-center p-2 min-h-0" style={{ zIndex: 20 }}>
+                <PixelBoard
+                  boardState={gameState.boardState}
+                  players={gameState.players}
+                  currentPlayer={currentPlayer}
+                  onTileClick={(property) => {
+                    setLandedProperty(property);
+                  }}
+                  landedPosition={landedPosition}
+                />
 
                 {!hasEnoughPlayers && (
                   <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 gap-4 z-30 pointer-events-none">
