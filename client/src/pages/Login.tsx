@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login } from '../lib/session';
+import { login, getApiUrl, setCustomBackendUrl } from '../lib/session';
 
 const AVATARS = ['💻', '🐍', '🚀', '🤖', '🦊', '👾', '🎮', '⚡'];
 
@@ -10,6 +10,17 @@ export default function Login() {
   const [avatar, setAvatar] = useState('💻');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showServerConfig, setShowServerConfig] = useState(false);
+  const [serverUrl, setServerUrl] = useState('');
+
+  useEffect(() => {
+    const active = getApiUrl().replace(/\/api\/?$/, '');
+    setServerUrl(active);
+    // If on HTTPS (e.g. Vercel) and URL is localhost, prompt server config
+    if (window.location.protocol === 'https:' && active.includes('localhost')) {
+      setShowServerConfig(true);
+    }
+  }, []);
 
   const submit = async () => {
     const name = username.trim();
@@ -24,13 +35,28 @@ export default function Login() {
     setLoading(true);
     setError('');
     try {
+      if (serverUrl.trim()) {
+        setCustomBackendUrl(serverUrl.trim());
+      }
       await login(name, avatar);
       navigate('/lobby');
     } catch (e: any) {
-      setError(e?.response?.data?.error || 'Could not reach the server. Is it running?');
+      const isHttpsLocalhost = window.location.protocol === 'https:' && getApiUrl().includes('localhost');
+      if (isHttpsLocalhost) {
+        setError('Frontend is running on HTTPS (Vercel) but backend is set to localhost. Please enter your deployed backend server URL below.');
+        setShowServerConfig(true);
+      } else {
+        setError(e?.response?.data?.error || 'Could not reach the game server. Is it running?');
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const saveServer = () => {
+    setCustomBackendUrl(serverUrl);
+    setError('');
+    setShowServerConfig(false);
   };
 
   return (
@@ -81,6 +107,44 @@ export default function Login() {
         </div>
 
         {error && <div className="px-body" style={styles.error}>{error}</div>}
+
+        {/* Server Config Toggle */}
+        <div style={{ marginTop: '12px' }}>
+          <button
+            type="button"
+            className="px-body"
+            style={{ fontSize: '0.8rem', color: '#5a553f', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+            onClick={() => setShowServerConfig(!showServerConfig)}
+          >
+            ⚙️ {showServerConfig ? 'Hide Server URL' : 'Server Connection Settings'}
+          </button>
+          {showServerConfig && (
+            <div style={{ marginTop: '8px', background: '#f5efe0', padding: '10px', border: '2px solid #1a1a2e', borderRadius: '4px' }}>
+              <label className="px-head" style={{ fontSize: '0.55rem', display: 'block', marginBottom: '4px' }}>
+                BACKEND SERVER URL
+              </label>
+              <input
+                className="px-input"
+                style={{ fontSize: '0.75rem', padding: '6px' }}
+                value={serverUrl}
+                placeholder="https://your-server.railway.app or http://localhost:5001"
+                onChange={(e) => setServerUrl(e.target.value)}
+              />
+              <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                <button className="px-btn px-btn-dark" style={{ fontSize: '0.55rem', padding: '4px 8px' }} onClick={saveServer}>
+                  SAVE SERVER
+                </button>
+                <button
+                  className="px-btn px-btn-ghost"
+                  style={{ fontSize: '0.55rem', padding: '4px 8px' }}
+                  onClick={() => { setServerUrl('http://localhost:5001'); setCustomBackendUrl(''); }}
+                >
+                  RESET LOCAL
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         <button className="px-btn" style={styles.submit} onClick={submit} disabled={loading}>
           {loading ? 'LOADING...' : 'ENTER ▶'}

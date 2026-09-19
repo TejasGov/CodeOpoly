@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import { toast, Toaster } from 'react-hot-toast';
 import { QRCodeSVG } from 'qrcode.react';
+import axios from 'axios';
 import PixelBoard from '../components/PixelBoard';
 import CurrentActionDisplay from '../components/CurrentActionDisplay';
 import FullCodeChallengeModal from '../components/FullCodeChallengeModal';
@@ -20,6 +21,7 @@ import ConfettiParticles from '../components/particles/ConfettiParticles';
 import GoldenRingEffect from '../components/particles/GoldenRingEffect';
 import { getProblemForProperty, getRandomProblemByDifficulty } from '../data/problemBank';
 import { executeCode } from '../services/judge0Service';
+import { getSocketUrl, getApiUrl, getSession } from '../lib/session';
 import type { Problem } from '../data/problemBank';
 
 // Turn Timer Component for Right Sidebar
@@ -102,8 +104,6 @@ function TurnTimerDisplay({ duration, isPaused, turnNumber }: { duration: number
   );
 }
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5001';
-
 interface GameState {
   _id: string;
   roomCode: string;
@@ -183,6 +183,14 @@ const describeProperty = (property: any) => {
   return property.name;
 };
 
+const getPropertyDisplayName = (property: any) => {
+  if (!property) return 'Unknown Space';
+  if (property.specialType) {
+    return property.name;
+  }
+  return property.name;
+};
+
 const getPlayerNameById = (players: any[], id: string | null | undefined) => {
   if (!id) return 'Player';
   const player = players?.find?.((p: any) => p.id === id);
@@ -193,7 +201,13 @@ export default function GameRoom() {
   const { gameId } = useParams<{ gameId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { playerId } = location.state || {};
+  const session = getSession();
+
+  const [playerId, setPlayerId] = useState<string>(() => {
+    const fromState = location.state?.playerId;
+    const fromStorage = gameId ? sessionStorage.getItem(`codepoly.player.${gameId}`) : null;
+    return fromState || fromStorage || '';
+  });
 
   const [socket, setSocket] = useState<Socket | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -215,6 +229,7 @@ export default function GameRoom() {
   const [floatingChanges, setFloatingChanges] = useState<any[]>([]);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [isInviteHudCollapsed, setIsInviteHudCollapsed] = useState(false);
 
   const hasLoggedStartRef = useRef(false);
   const previousTurnRef = useRef<string | null>(null);
@@ -249,24 +264,59 @@ export default function GameRoom() {
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
+  // Ensure playerId is resolved
   useEffect(() => {
-    if (!gameId || !playerId) {
-      console.error('Missing gameId or playerId:', { gameId, playerId });
-      navigate('/');
+    if (!gameId) {
+      navigate('/lobby');
       return;
     }
 
-    const newSocket = io(SOCKET_URL);
-    setSocket(newSocket);
+    if (!session) {
+      navigate('/login');
+      return;
+    }
 
-    // Connection error handling
-    newSocket.on('connect', () => {
-      // Socket connected successfully
+    if (!playerId) {
+      // Try resolving from backend
+      const apiUrl = getApiUrl();
+      axios.get(`${apiUrl}/games/${gameId}`).then((res) => {
+        const game = res.data;
+        const found = game?.players?.find((p: any) => p.name.toLowerCase() === session.username.toLowerCase());
+        if (found) {
+          setPlayerId(found.id);
+          sessionStorage.setItem(`codepoly.player.${gameId}`, found.id);
+        } else {
+          // Auto-join game
+          axios.post(`${apiUrl}/games/join`, {
+            roomCode: game.roomCode,
+            playerName: session.username,
+            avatar: session.avatar,
+          }).then((joinRes) => {
+            setPlayerId(joinRes.data.playerId);
+            sessionStorage.setItem(`codepoly.player.${gameId}`, joinRes.data.playerId);
+          }).catch(() => {
+            navigate('/lobby');
+          });
+        }
+      }).catch(() => {
+        navigate('/lobby');
+      });
+    }
+  }, [gameId, playerId, session, navigate]);
+
+  useEffect(() => {
+    if (!gameId || !playerId) {
+      return;
+    }
+
+    const socketUrl = getSocketUrl();
+    const newSocket = io(socketUrl, {
+      transports: ['websocket', 'polling'],
     });
+    setSocket(newSocket);
 
     newSocket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
-      alert('Failed to connect to game server. Please refresh the page.');
     });
 
     // Join game
@@ -1074,14 +1124,96 @@ export default function GameRoom() {
             transition={{ duration: 0.5 }}
             className="grid grid-cols-12 gap-2 h-full"
           >
-            {/* Left Sidebar - PLAYERS + LIVE FEED */}
+            {/* Left Sidebar - INVITE HUD + PLAYERS + LIVE FEED */}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6 }}
-              className="col-span-2 flex flex-col gap-2 overflow-hidden relative"
+              className="col-span-3 flex flex-col gap-2 overflow-y-auto relative"
               style={{ maxHeight: 'calc(100vh - 2rem)', zIndex: 10 }}
             >
+              {/* COLLAPSIBLE LOBBY INVITE HUD (Shown when waiting for players) */}
+              {!hasEnoughPlayers && (
+                <div className="bg-gradient-to-br from-slate-900/95 via-slate-850/95 to-slate-800/95 backdrop-blur-xl rounded-xl border-2 border-emerald-400/80 shadow-xl p-3 flex-shrink-0 flex flex-col gap-2">
+                  <div className="flex items-center justify-between border-b border-emerald-500/20 pb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">👥</span>
+                      <h2 className="text-[11px] font-extrabold text-emerald-400 uppercase tracking-wider font-mono">
+                        INVITE PLAYERS
+                      </h2>
+                    </div>
+                    <button
+                      onClick={() => setIsInviteHudCollapsed(!isInviteHudCollapsed)}
+                      className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded text-[10px] font-mono border border-emerald-500/30 transition-colors"
+                      title={isInviteHudCollapsed ? "Expand Invite HUD" : "Collapse Invite HUD"}
+                    >
+                      {isInviteHudCollapsed ? "▼ EXPAND" : "▲ HIDE"}
+                    </button>
+                  </div>
+
+                  {!isInviteHudCollapsed ? (
+                    <div className="flex flex-col items-center gap-2 pt-1">
+                      {/* 6-Letter Room Code */}
+                      <div className="bg-slate-950/80 border border-emerald-400/60 rounded-lg p-2 w-full text-center">
+                        <div className="text-[9px] uppercase font-mono tracking-widest text-emerald-400 font-bold">
+                          ROOM CODE
+                        </div>
+                        <div className="text-xl md:text-2xl font-extrabold font-mono tracking-widest text-white mt-0.5">
+                          {gameState.roomCode}
+                        </div>
+                      </div>
+
+                      {/* Scan-to-Join QR Code */}
+                      <div className="bg-white p-2 rounded-lg border-2 border-emerald-400 shadow-md flex flex-col items-center justify-center">
+                        <QRCodeSVG
+                          value={`${window.location.origin}/lobby?join=${encodeURIComponent(gameState.roomCode)}`}
+                          size={96}
+                          bgColor="#ffffff"
+                          fgColor="#000000"
+                          level="M"
+                        />
+                        <span className="text-[8px] font-mono font-extrabold text-slate-900 mt-1">
+                          SCAN TO JOIN
+                        </span>
+                      </div>
+
+                      <div className="text-white/80 font-mono text-[10px] text-center">
+                        {playersNeeded === 1 ? 'Waiting for 1 more player...' : `Waiting for ${playersNeeded} players...`}
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-col gap-1.5 w-full">
+                        <button
+                          onClick={copyRoomCode}
+                          className="w-full py-1.5 px-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono text-[10px] rounded transition-all active:scale-95 flex items-center justify-center gap-1 shadow"
+                        >
+                          {copiedCode ? '✅ COPIED CODE!' : '📋 COPY ROOM CODE'}
+                        </button>
+                        <button
+                          onClick={copyInviteLink}
+                          className="w-full py-1.5 px-2 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold font-mono text-[10px] rounded transition-all active:scale-95 flex items-center justify-center gap-1 shadow"
+                        >
+                          {copiedLink ? '✅ COPIED LINK!' : '🔗 COPY INVITE LINK'}
+                        </button>
+                      </div>
+
+                      {/* Leave Lobby */}
+                      <button
+                        onClick={handleLeaveLobby}
+                        className="text-[10px] text-red-400 hover:text-red-300 font-mono underline transition-colors mt-0.5"
+                      >
+                        ← Leave Lobby
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between text-[10px] font-mono py-1">
+                      <span className="text-white/70">Code: <strong className="text-emerald-400 font-bold">{gameState.roomCode}</strong></span>
+                      <span className="text-emerald-400">({gameState.players.length}/4)</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* PLAYERS Section - Ultra Compact */}
               <div className="bg-gradient-to-br from-slate-900/95 to-slate-800/95 backdrop-blur-lg rounded border border-emerald-500/20 shadow-lg p-2 flex-shrink-0">
                 <div className="flex items-center justify-between mb-1.5">
@@ -1153,11 +1285,26 @@ export default function GameRoom() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.6 }}
-              className="col-span-8 flex flex-col items-center justify-center relative z-20"
+              className="col-span-7 flex flex-col items-center justify-center relative z-20"
               style={{ minHeight: 0, isolation: 'isolate' }}
             >
+              {/* LOBBY STATUS BANNER (When waiting for players) */}
+              {!hasEnoughPlayers && (
+                <div className="mb-2 flex items-center justify-between gap-3 px-4 py-1.5 bg-slate-900/90 border border-emerald-400/50 rounded-lg shadow-lg flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse"></div>
+                    <span className="text-xs font-mono font-bold text-white">LOBBY OPEN</span>
+                    <span className="text-xs font-mono text-emerald-400">({gameState.players.length}/4 Players)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-white/70">Room:</span>
+                    <span className="text-xs font-mono font-extrabold text-yellow-300 tracking-wider bg-slate-800 px-2 py-0.5 rounded border border-yellow-400/40">{gameState.roomCode}</span>
+                  </div>
+                </div>
+              )}
+
               {/* CURRENT TURN Display Above Board - More Prominent */}
-              {gameState.currentTurn && (() => {
+              {gameState.currentTurn && hasEnoughPlayers && (() => {
                 const currentPlayer = gameState.players.find((p: any) => p.id === gameState.currentTurn);
                 return currentPlayer ? (
                   <div className="mb-2 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500/30 via-emerald-400/20 to-emerald-500/30 rounded-lg border-2 border-emerald-400/60 flex-shrink-0 shadow-lg shadow-emerald-500/30">
@@ -1179,69 +1326,6 @@ export default function GameRoom() {
                   landedPosition={landedPosition}
                 />
 
-                {!hasEnoughPlayers && (
-                  <div className="absolute inset-0 bg-slate-900/75 backdrop-blur-md flex flex-col items-center justify-center text-center p-4 gap-4 z-30 pointer-events-none">
-                    <div className="bg-slate-900/95 backdrop-blur-xl rounded-2xl p-6 md:p-8 border-4 border-emerald-400 shadow-2xl pointer-events-auto max-w-md w-full flex flex-col items-center gap-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-3xl">👥</span>
-                        <h2 className="text-xl md:text-2xl font-bold text-white font-mono">Waiting for players</h2>
-                      </div>
-
-                      {/* 6-Letter Room Code Display */}
-                      <div className="bg-slate-800/90 border-2 border-emerald-400/80 rounded-xl px-5 py-3 w-full flex flex-col items-center justify-center">
-                        <div className="text-xs uppercase font-mono tracking-widest text-emerald-400 font-bold mb-1">
-                          ROOM CODE
-                        </div>
-                        <div className="text-3xl md:text-4xl font-extrabold font-mono tracking-widest text-white">
-                          {gameState.roomCode}
-                        </div>
-                      </div>
-
-                      {/* Scan-to-Join QR Code */}
-                      <div className="bg-white p-3 rounded-xl border-4 border-emerald-400 shadow-lg flex flex-col items-center justify-center">
-                        <QRCodeSVG
-                          value={`${window.location.origin}/lobby?join=${encodeURIComponent(gameState.roomCode)}`}
-                          size={120}
-                          bgColor="#ffffff"
-                          fgColor="#000000"
-                          level="M"
-                        />
-                        <span className="text-[10px] font-mono font-bold text-slate-800 mt-1">
-                          SCAN TO JOIN
-                        </span>
-                      </div>
-
-                      <p className="text-white/70 font-mono text-xs">
-                        {playersNeeded === 1 ? 'Need 1 more player to begin.' : `Need ${playersNeeded} more players to begin.`}
-                      </p>
-
-                      {/* Share & Copy Action Buttons */}
-                      <div className="flex flex-col sm:flex-row gap-2 w-full">
-                        <button
-                          onClick={copyRoomCode}
-                          className="flex-1 px-3 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono text-xs rounded-lg transition-all active:scale-95 flex items-center justify-center gap-1 shadow-md"
-                        >
-                          {copiedCode ? '✅ COPIED!' : '📋 COPY CODE'}
-                        </button>
-                        <button
-                          onClick={copyInviteLink}
-                          className="flex-1 px-3 py-2 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold font-mono text-xs rounded-lg transition-all active:scale-95 flex items-center justify-center gap-1 shadow-md"
-                        >
-                          {copiedLink ? '✅ COPIED LINK!' : '🔗 INVITE LINK'}
-                        </button>
-                      </div>
-
-                      {/* Leave / Cancel Button */}
-                      <button
-                        onClick={handleLeaveLobby}
-                        className="text-xs text-red-400 hover:text-red-300 font-mono underline transition-colors mt-1"
-                      >
-                        ← Leave &amp; Cancel Lobby
-                      </button>
-                    </div>
-                  </div>
-                )}
-                
                 {/* Current Action Display in Center - Only show when there's an action */}
                 {(actionType && actionType !== 'awaiting-action') && (
                   <div className="absolute inset-0 pointer-events-none z-20">

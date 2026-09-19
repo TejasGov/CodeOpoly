@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { QRCodeSVG } from 'qrcode.react';
-import { API_URL, getSession, clearSession, refreshProfile, type PlayerProfile } from '../lib/session';
+import { getApiUrl, getSession, clearSession, refreshProfile, type PlayerProfile } from '../lib/session';
 
 type Mode = 'menu' | 'create' | 'join' | 'stats';
 
@@ -14,8 +14,6 @@ export default function Lobby() {
   const [roomCode, setRoomCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   // Load profile and check URL join parameters
   useEffect(() => {
@@ -44,15 +42,20 @@ export default function Lobby() {
   const createGame = async () => {
     setBusy(true);
     setError('');
+    const apiUrl = getApiUrl();
     try {
-      const res = await axios.post(`${API_URL}/games/create`, {
+      const res = await axios.post(`${apiUrl}/games/create`, {
         playerName: profile.username,
         avatar: profile.avatar,
       });
       const { gameId, roomCode: code, playerId } = res.data;
+      if (gameId && playerId) {
+        sessionStorage.setItem(`codepoly.player.${gameId}`, playerId);
+        sessionStorage.setItem(`codepoly.room.${gameId}`, code);
+      }
       navigate(`/game/${gameId}`, { state: { roomCode: code, playerId, playerName: profile.username } });
     } catch (e: any) {
-      setError(e?.response?.data?.error || 'Failed to create game.');
+      setError(e?.response?.data?.error || 'Failed to create game. Check server connection.');
     } finally {
       setBusy(false);
     }
@@ -66,16 +69,21 @@ export default function Lobby() {
     }
     setBusy(true);
     setError('');
+    const apiUrl = getApiUrl();
     try {
-      const res = await axios.post(`${API_URL}/games/join`, {
+      const res = await axios.post(`${apiUrl}/games/join`, {
         roomCode: code,
         playerName: profile.username,
         avatar: profile.avatar,
       });
       const { gameId, playerId } = res.data;
+      if (gameId && playerId) {
+        sessionStorage.setItem(`codepoly.player.${gameId}`, playerId);
+        sessionStorage.setItem(`codepoly.room.${gameId}`, code);
+      }
       navigate(`/game/${gameId}`, { state: { roomCode: code, playerId, playerName: profile.username } });
     } catch (e: any) {
-      setError(e?.response?.data?.error || 'Could not join that room.');
+      setError(e?.response?.data?.error || 'Could not join that room. Please check the code.');
     } finally {
       setBusy(false);
     }
