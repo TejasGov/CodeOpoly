@@ -4,7 +4,14 @@ import { Problem } from '../models/Problem.js';
 import { executeCode } from '../services/judge0Service.js';
 import { findGameById, updateGame } from '../utils/memoryStore.js';
 import { getRandomChanceCard, getRandomCommunityChestCard, type DebuggingCard } from '../utils/debuggingCards.js';
+import { recordGameResult } from '../routes/authRoutes.js';
 import mongoose from 'mongoose';
+
+function computeWinnerName(players: any[]): string {
+  if (!players?.length) return '';
+  const netWorth = (p: any) => (p.money || 0) + (p.properties?.length || 0) * 100;
+  return players.reduce((best, p) => (netWorth(p) > netWorth(best) ? p : best)).name;
+}
 
 function useMongoDB() {
   return mongoose.connection.readyState === 1;
@@ -512,14 +519,17 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
       if (!game) return;
 
       game.status = 'finished';
-      
+
       if (useMongoDB()) {
         await game.save();
       } else {
         updateGame(gameId, game);
       }
 
-      io.to(gameId).emit('game-over', { gameId });
+      const winnerName = computeWinnerName(game.players);
+      await recordGameResult(game.players, winnerName);
+
+      io.to(gameId).emit('game-over', { gameId, winnerName });
     } catch (error) {
       console.error('Error ending game:', error);
     }
