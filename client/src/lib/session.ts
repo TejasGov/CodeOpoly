@@ -8,6 +8,11 @@ export function getApiUrl(): string {
   }
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL;
   
+  // When running in HTTPS / Web production (e.g. Vercel)
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return 'https://codeopoly-server-production.up.railway.app/api';
+  }
+
   // When running locally on LAN / Wi-Fi IP (e.g. 192.168.x.x), auto-point to port 5001 on that host
   if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
     if (window.location.protocol === 'http:') {
@@ -26,6 +31,11 @@ export function getSocketUrl(): string {
   if (import.meta.env.VITE_SOCKET_URL) return import.meta.env.VITE_SOCKET_URL;
   if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '');
   
+  // When running in HTTPS / Web production (e.g. Vercel)
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    return 'https://codeopoly-server-production.up.railway.app';
+  }
+
   // When running locally on LAN / Wi-Fi IP (e.g. 192.168.x.x), auto-point to port 5001 on that host
   if (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost') {
     if (window.location.protocol === 'http:') {
