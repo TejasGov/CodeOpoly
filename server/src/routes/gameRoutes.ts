@@ -3,7 +3,7 @@ import { Game } from '../models/Game.js';
 import { Problem } from '../models/Problem.js';
 import { generateRoomCode } from '../utils/roomCode.js';
 import { initializeBoard } from '../utils/boardInitializer.js';
-import { saveGame, findGameById, findGameByRoomCode, updateGame } from '../utils/memoryStore.js';
+import { saveGame, findGameById, findGameByRoomCode, updateGame, deleteGame, getAllGames } from '../utils/memoryStore.js';
 import mongoose from 'mongoose';
 
 const router = express.Router();
@@ -12,6 +12,22 @@ const router = express.Router();
 function useMongoDB() {
   return mongoose.connection.readyState === 1;
 }
+
+function isValidObjectId(id: string): boolean {
+  return mongoose.Types.ObjectId.isValid(id) && /^[0-9a-fA-F]{24}$/.test(id);
+}
+
+// Health check endpoint for Railway / Render / Vercel uptime checks
+router.get('/health', (_req, res) => {
+  const mongoStatus = useMongoDB() ? 'connected' : 'disconnected (using in-memory fallback)';
+  const activeLobbies = useMongoDB() ? undefined : getAllGames().length;
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    database: mongoStatus,
+    activeLobbies,
+  });
+});
 
 // Create a new game room
 router.post('/games/create', async (req, res) => {
@@ -22,13 +38,13 @@ router.post('/games/create', async (req, res) => {
       return res.status(400).json({ error: 'Player name is required' });
     }
 
-    const roomCode = generateRoomCode();
+    const roomCode = generateRoomCode(6);
     const boardState = initializeBoard();
     const playerId = `player-${Date.now()}`;
 
     const gameData = {
       roomCode,
-      status: 'waiting',
+      status: 'waiting' as const,
       players: [{
         id: playerId,
         name: playerName,
@@ -42,24 +58,22 @@ router.post('/games/create', async (req, res) => {
       currentTurn: playerId,
       turnNumber: 1,
       startTime: new Date(),
+      lastActivity: new Date(),
       boardState,
     };
 
-    let game;
     if (useMongoDB()) {
-      // Use MongoDB if connected
-      game = new Game(gameData);
+      const game = new Game(gameData);
       await game.save();
-      res.json({
-        gameId: game._id.toString(),
+      return res.json({
+        gameId: String(game._id),
         roomCode: game.roomCode,
         playerId: game.players[0].id,
       });
     } else {
-      // Use in-memory store
       console.log('⚠️  MongoDB not connected, using in-memory store');
-      game = saveGame(gameData);
-      res.json({
+      const game = saveGame(gameData);
+      return res.json({
         gameId: game._id,
         roomCode: game.roomCode,
         playerId: game.players[0].id,
@@ -67,10 +81,8 @@ router.post('/games/create', async (req, res) => {
     }
   } catch (error: any) {
     console.error('Error creating game:', error);
-    console.error('Error stack:', error.stack);
     res.status(500).json({ 
       error: error.message || 'Internal server error',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -84,8 +96,9 @@ router.post('/games/join', async (req, res) => {
       return res.status(400).json({ error: 'Room code and player name are required' });
     }
 
-    let game;
     const upperRoomCode = roomCode.toUpperCase().trim();
+    let game: any;
+
     if (useMongoDB()) {
       game = await Game.findOne({ roomCode: upperRoomCode });
     } else {
@@ -93,8 +106,7 @@ router.post('/games/join', async (req, res) => {
     }
 
     if (!game) {
-      console.error('Game not found for room code:', upperRoomCode);
-      return res.status(404).json({ error: 'Game not found. Make sure the room code is correct and the game was created.' });
+      return res.status(404).json({ error: 'Game not found. Make sure the 6-letter room code is correct.' });
     }
 
     if (game.status !== 'waiting') {
@@ -102,12 +114,23 @@ router.post('/games/join', async (req, res) => {
     }
 
     if (game.players.length >= 4) {
-      return res.status(400).json({ error: 'Game is full' });
+      return res.status(400).json({ error: 'Game is full (maximum 4 players)' });
+    }
+
+    // Check if player name already in room
+    const existingPlayer = game.players.find((p: any) => p.name.toLowerCase() === playerName.trim().toLowerCase());
+    if (existingPlayer) {
+      const id = game._id ? String(game._id) : game.id;
+      return res.json({
+        gameId: id,
+        roomCode: game.roomCode,
+        playerId: existingPlayer.id,
+      });
     }
 
     const newPlayer = {
       id: `player-${Date.now()}`,
-      name: playerName,
+      name: playerName.trim(),
       avatar: avatar || '💻',
       position: 0,
       money: 1500,
@@ -117,15 +140,17 @@ router.post('/games/join', async (req, res) => {
     };
 
     game.players.push(newPlayer);
+    game.lastActivity = new Date();
     
     if (useMongoDB()) {
       await game.save();
     } else {
-      updateGame(game._id.toString ? game._id.toString() : game._id, game);
+      updateGame(game._id, game);
     }
 
+    const gameId = game._id ? String(game._id) : game.id;
     res.json({
-      gameId: game._id.toString ? game._id.toString() : game._id,
+      gameId,
       roomCode: game.roomCode,
       playerId: newPlayer.id,
     });
@@ -138,11 +163,12 @@ router.post('/games/join', async (req, res) => {
 // Get game state
 router.get('/games/:gameId', async (req, res) => {
   try {
+    const gameId = req.params.gameId;
     let game;
-    if (useMongoDB()) {
-      game = await Game.findById(req.params.gameId);
+    if (useMongoDB() && isValidObjectId(gameId)) {
+      game = await Game.findById(gameId);
     } else {
-      game = findGameById(req.params.gameId);
+      game = findGameById(gameId);
     }
 
     if (!game) {
@@ -156,6 +182,26 @@ router.get('/games/:gameId', async (req, res) => {
   }
 });
 
+// Delete a game / lobby (e.g., when host cancels or game ends)
+router.delete('/games/:gameId', async (req, res) => {
+  try {
+    const gameId = req.params.gameId;
+    let deleted = false;
+
+    if (useMongoDB() && isValidObjectId(gameId)) {
+      const result = await Game.findByIdAndDelete(gameId);
+      deleted = !!result;
+    } else {
+      deleted = deleteGame(gameId);
+    }
+
+    res.json({ success: true, deleted, gameId });
+  } catch (error: any) {
+    console.error('Error deleting game:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get problems by category and difficulty
 router.get('/problems', async (req, res) => {
   try {
@@ -165,9 +211,11 @@ router.get('/problems', async (req, res) => {
     if (category) query.category = category;
     if (difficulty) query.difficulty = difficulty;
 
-    const problems = await Problem.find(query).limit(20);
-
-    res.json(problems);
+    if (useMongoDB()) {
+      const problems = await Problem.find(query).limit(20);
+      return res.json(problems);
+    }
+    return res.json([]);
   } catch (error: any) {
     console.error('Error fetching problems:', error);
     res.status(500).json({ error: error.message });
@@ -175,4 +223,5 @@ router.get('/problems', async (req, res) => {
 });
 
 export default router;
+
 

@@ -271,11 +271,6 @@ export default function EnhancedMonopolyBoard({
           onMouseLeave={() => setHoveredProperty(null)}
           onClick={() => onTileClick(property)}
           whileHover={{ scale: 1.05 }}
-          style={{
-            boxShadow: isBugCard
-              ? '0 0 20px rgba(239, 68, 68, 0.5), inset 0 0 20px rgba(239, 68, 68, 0.2)'
-              : '0 0 20px rgba(16, 185, 129, 0.5), inset 0 0 20px rgba(16, 185, 129, 0.2)',
-          }}
         >
           {/* Terminal/Error style for Bug Card - Icon only */}
           {isBugCard && (

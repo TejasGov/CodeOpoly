@@ -3,6 +3,7 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import { motion } from 'framer-motion';
 import { toast, Toaster } from 'react-hot-toast';
+import { QRCodeSVG } from 'qrcode.react';
 import PixelBoard from '../components/PixelBoard';
 import CurrentActionDisplay from '../components/CurrentActionDisplay';
 import FullCodeChallengeModal from '../components/FullCodeChallengeModal';
@@ -212,6 +213,8 @@ export default function GameRoom() {
   const [debuggingCard, setDebuggingCard] = useState<any>(null);
   const [moneyTransfers, setMoneyTransfers] = useState<any[]>([]);
   const [floatingChanges, setFloatingChanges] = useState<any[]>([]);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const hasLoggedStartRef = useRef(false);
   const previousTurnRef = useRef<string | null>(null);
@@ -221,6 +224,30 @@ export default function GameRoom() {
   // Enhanced UI hooks
   const { notifications, showNotification, closeNotification } = useNotifications();
   const effects = useGameEffects();
+
+  const handleLeaveLobby = useCallback(() => {
+    if (socket && gameId && playerId) {
+      socket.emit('leave-game', { gameId, playerId });
+    }
+    navigate('/lobby');
+  }, [socket, gameId, playerId, navigate]);
+
+  const copyRoomCode = () => {
+    if (!gameState?.roomCode) return;
+    navigator.clipboard.writeText(gameState.roomCode);
+    setCopiedCode(true);
+    toast.success('Room code copied!');
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const copyInviteLink = () => {
+    if (!gameState?.roomCode) return;
+    const inviteUrl = `${window.location.origin}/lobby?join=${encodeURIComponent(gameState.roomCode)}`;
+    navigator.clipboard.writeText(inviteUrl);
+    setCopiedLink(true);
+    toast.success('Invite link copied!');
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
 
   useEffect(() => {
     if (!gameId || !playerId) {
@@ -558,6 +585,16 @@ export default function GameRoom() {
         });
       }
       newSocket.emit('get-game-state', { gameId });
+    });
+
+    newSocket.on('game-cancelled', (data: { message?: string }) => {
+      toast.error(data?.message || 'Game lobby was cancelled');
+      navigate('/lobby');
+    });
+
+    newSocket.on('game-deleted', () => {
+      toast.error('Game room was deleted');
+      navigate('/lobby');
     });
 
     newSocket.on('error', (error: any) => {
@@ -1143,16 +1180,64 @@ export default function GameRoom() {
                 />
 
                 {!hasEnoughPlayers && (
-                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 gap-4 z-30 pointer-events-none">
-                    <div className="bg-slate-900/95 backdrop-blur-lg rounded-2xl p-8 border-4 border-emerald-400 shadow-2xl pointer-events-auto">
-                      <div className="text-3xl">👥</div>
-                      <h2 className="text-2xl font-bold text-white font-mono mt-4">Waiting for more players</h2>
-                      <p className="text-white/70 font-mono text-sm mt-2">
-                        Share room code <span className="text-emerald-400 font-semibold text-lg">{gameState.roomCode}</span> with a friend
+                  <div className="absolute inset-0 bg-slate-900/75 backdrop-blur-md flex flex-col items-center justify-center text-center p-4 gap-4 z-30 pointer-events-none">
+                    <div className="bg-slate-900/95 backdrop-blur-xl rounded-2xl p-6 md:p-8 border-4 border-emerald-400 shadow-2xl pointer-events-auto max-w-md w-full flex flex-col items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-3xl">👥</span>
+                        <h2 className="text-xl md:text-2xl font-bold text-white font-mono">Waiting for players</h2>
+                      </div>
+
+                      {/* 6-Letter Room Code Display */}
+                      <div className="bg-slate-800/90 border-2 border-emerald-400/80 rounded-xl px-5 py-3 w-full flex flex-col items-center justify-center">
+                        <div className="text-xs uppercase font-mono tracking-widest text-emerald-400 font-bold mb-1">
+                          ROOM CODE
+                        </div>
+                        <div className="text-3xl md:text-4xl font-extrabold font-mono tracking-widest text-white">
+                          {gameState.roomCode}
+                        </div>
+                      </div>
+
+                      {/* Scan-to-Join QR Code */}
+                      <div className="bg-white p-3 rounded-xl border-4 border-emerald-400 shadow-lg flex flex-col items-center justify-center">
+                        <QRCodeSVG
+                          value={`${window.location.origin}/lobby?join=${encodeURIComponent(gameState.roomCode)}`}
+                          size={120}
+                          bgColor="#ffffff"
+                          fgColor="#000000"
+                          level="M"
+                        />
+                        <span className="text-[10px] font-mono font-bold text-slate-800 mt-1">
+                          SCAN TO JOIN
+                        </span>
+                      </div>
+
+                      <p className="text-white/70 font-mono text-xs">
+                        {playersNeeded === 1 ? 'Need 1 more player to begin.' : `Need ${playersNeeded} more players to begin.`}
                       </p>
-                      <p className="text-white/50 text-xs font-mono mt-2">
-                        {playersNeeded === 1 ? 'Need 1 more player to start.' : `Need ${playersNeeded} more players to start.`}
-                      </p>
+
+                      {/* Share & Copy Action Buttons */}
+                      <div className="flex flex-col sm:flex-row gap-2 w-full">
+                        <button
+                          onClick={copyRoomCode}
+                          className="flex-1 px-3 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold font-mono text-xs rounded-lg transition-all active:scale-95 flex items-center justify-center gap-1 shadow-md"
+                        >
+                          {copiedCode ? '✅ COPIED!' : '📋 COPY CODE'}
+                        </button>
+                        <button
+                          onClick={copyInviteLink}
+                          className="flex-1 px-3 py-2 bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-bold font-mono text-xs rounded-lg transition-all active:scale-95 flex items-center justify-center gap-1 shadow-md"
+                        >
+                          {copiedLink ? '✅ COPIED LINK!' : '🔗 INVITE LINK'}
+                        </button>
+                      </div>
+
+                      {/* Leave / Cancel Button */}
+                      <button
+                        onClick={handleLeaveLobby}
+                        className="text-xs text-red-400 hover:text-red-300 font-mono underline transition-colors mt-1"
+                      >
+                        ← Leave &amp; Cancel Lobby
+                      </button>
                     </div>
                   </div>
                 )}

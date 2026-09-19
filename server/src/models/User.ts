@@ -4,6 +4,7 @@ export interface IUser extends Document {
   username: string;
   avatar: string;
   gamesPlayed: number;
+  roundsPlayed: number;
   wins: number;
   losses: number;
   totalEarnings: number;
@@ -18,6 +19,7 @@ const UserSchema = new Schema<IUser>(
     username: { type: String, required: true, unique: true, trim: true, index: true },
     avatar: { type: String, default: '💻' },
     gamesPlayed: { type: Number, default: 0 },
+    roundsPlayed: { type: Number, default: 0 },
     wins: { type: Number, default: 0 },
     losses: { type: Number, default: 0 },
     totalEarnings: { type: Number, default: 0 },
@@ -28,3 +30,4 @@ const UserSchema = new Schema<IUser>(
 );
 
 export const User = mongoose.model<IUser>('User', UserSchema);
+

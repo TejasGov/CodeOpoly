@@ -16,7 +16,7 @@ export interface IProperty {
   isRailroad?: boolean;
   isUtility?: boolean;
   isSpecial?: boolean;
-  specialType?: 'go' | 'jail' | 'free-parking' | 'go-to-jail' | 'chance' | 'community-chest';
+  specialType?: 'go' | 'jail' | 'free-parking' | 'go-to-jail' | 'chance' | 'community-chest' | 'tax';
 }
 
 export interface IPlayer {
@@ -38,6 +38,7 @@ export interface IGame extends Document {
   currentTurn: string; // Player ID
   turnNumber: number;
   startTime: Date;
+  lastActivity?: Date;
   boardState: IProperty[];
   activeDuel?: {
     id: string;
@@ -90,6 +91,7 @@ const GameSchema = new Schema<IGame>({
   currentTurn: String,
   turnNumber: { type: Number, default: 1 },
   startTime: Date,
+  lastActivity: { type: Date, default: Date.now },
   boardState: [PropertySchema],
   activeDuel: {
     id: String,

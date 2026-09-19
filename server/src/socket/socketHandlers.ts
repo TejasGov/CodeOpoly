@@ -1,10 +1,8 @@
 import { Server, Socket } from 'socket.io';
 import { Game } from '../models/Game.js';
-import { Problem } from '../models/Problem.js';
-import { executeCode } from '../services/judge0Service.js';
-import { findGameById, updateGame } from '../utils/memoryStore.js';
+import { findGameById, updateGame, deleteGame } from '../utils/memoryStore.js';
 import { getRandomChanceCard, getRandomCommunityChestCard, type DebuggingCard } from '../utils/debuggingCards.js';
-import { recordGameResult } from '../routes/authRoutes.js';
+import { recordGameResult, recordProblemSolved, recordTurnCompleted } from '../routes/authRoutes.js';
 import mongoose from 'mongoose';
 
 function computeWinnerName(players: any[]): string {
@@ -29,6 +27,24 @@ async function getGameById(gameId: string) {
   }
 }
 
+async function saveGameState(gameId: string, game: any) {
+  game.lastActivity = new Date();
+  if (useMongoDB() && typeof game.save === 'function') {
+    return await game.save();
+  } else {
+    return updateGame(gameId, game);
+  }
+}
+
+function serializeGameState(game: any) {
+  return {
+    ...(typeof game.toObject === 'function' ? game.toObject() : game),
+    _id: game._id ? String(game._id) : game.id,
+    boardState: game.boardState || [],
+    players: game.players || [],
+  };
+}
+
 async function endPlayerTurn(game: any, gameId: string, io: Server) {
   if (!game || !game.players || game.players.length === 0) {
     console.error('❌ Cannot end turn: Invalid game or no players');
@@ -42,21 +58,20 @@ async function endPlayerTurn(game: any, gameId: string, io: Server) {
     return;
   }
 
-  const nextIndex = (currentIndex + 1) % game.players.length;
   const previousPlayer = game.players[currentIndex].name;
+  const nextIndex = (currentIndex + 1) % game.players.length;
   const nextPlayer = game.players[nextIndex].name;
   
+  // Track that the previous player finished a round/turn
+  recordTurnCompleted(previousPlayer).catch(err => console.error('Error updating turn stat:', err));
+
   game.currentTurn = game.players[nextIndex].id;
   game.turnNumber += 1;
 
   console.log(`🔄 Turn switching: ${previousPlayer} → ${nextPlayer} (Turn #${game.turnNumber})`);
 
   try {
-    if (useMongoDB()) {
-      await game.save();
-    } else {
-      updateGame(gameId, game);
-    }
+    await saveGameState(gameId, game);
 
     io.to(gameId).emit('turn-ended', {
       nextPlayerId: game.currentTurn,
@@ -64,12 +79,7 @@ async function endPlayerTurn(game: any, gameId: string, io: Server) {
       turnNumber: game.turnNumber,
     });
 
-    // Broadcast updated game state to all players
-    const gameState = {
-      ...game.toObject ? game.toObject() : game,
-      boardState: game.boardState || [],
-      players: game.players || [],
-    };
+    const gameState = serializeGameState(game);
     io.to(gameId).emit('game-state', gameState);
     console.log(`✅ Turn ended successfully, next player: ${nextPlayer}`);
   } catch (error) {
@@ -82,7 +92,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
   // Join game room
   socket.on('join-game', async ({ gameId, playerId }) => {
     try {
-      const game = await getGameById(gameId);
+      const game: any = await getGameById(gameId);
       
       if (!game) {
         socket.emit('error', { message: 'Game not found' });
@@ -93,22 +103,14 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
       const player = game.players.find((p: any) => p.id === playerId);
       if (player) {
         player.socketId = socket.id;
-        if (useMongoDB()) {
-          await game.save();
-        } else {
-          updateGame(gameId, game);
-        }
+        await saveGameState(gameId, game);
       }
 
       socket.join(gameId);
       socket.emit('joined-game', { gameId, playerId });
       
       // Send current game state to the joining player
-      const gameState = {
-        ...game.toObject ? game.toObject() : game,
-        boardState: game.boardState || [],
-        players: game.players || [],
-      };
+      const gameState = serializeGameState(game);
       socket.emit('game-state', gameState);
       
       // Notify other players and broadcast updated game state to all
@@ -118,7 +120,6 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
         playerAvatar: player?.avatar,
       });
       
-      // Broadcast updated game state to all players in the room
       io.to(gameId).emit('game-state', gameState);
     } catch (error) {
       console.error('Error joining game:', error);
@@ -126,10 +127,56 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
     }
   });
 
+  // Leave / cancel game lobby
+  socket.on('leave-game', async ({ gameId, playerId }) => {
+    try {
+      const game: any = await getGameById(gameId);
+      if (!game) return;
+
+      const leavingPlayerIndex = game.players.findIndex((p: any) => p.id === playerId);
+      const isHost = leavingPlayerIndex === 0;
+
+      if (game.status === 'waiting' && (isHost || game.players.length <= 1)) {
+        // If host leaves or only 1 player was left, delete the game
+        if (useMongoDB() && isValidObjectId(gameId)) {
+          await Game.findByIdAndDelete(gameId);
+        } else {
+          deleteGame(gameId);
+        }
+        io.to(gameId).emit('game-cancelled', { message: 'Host cancelled or closed the lobby' });
+        return;
+      }
+
+      if (leavingPlayerIndex !== -1) {
+        const [leavingPlayer] = game.players.splice(leavingPlayerIndex, 1);
+        await saveGameState(gameId, game);
+        socket.leave(gameId);
+        io.to(gameId).emit('player-left', { playerId, playerName: leavingPlayer?.name });
+        io.to(gameId).emit('game-state', serializeGameState(game));
+      }
+    } catch (error) {
+      console.error('Error handling player leave:', error);
+    }
+  });
+
+  // Delete game room explicitly
+  socket.on('delete-game', async ({ gameId }) => {
+    try {
+      if (useMongoDB() && isValidObjectId(gameId)) {
+        await Game.findByIdAndDelete(gameId);
+      } else {
+        deleteGame(gameId);
+      }
+      io.to(gameId).emit('game-deleted', { gameId });
+    } catch (error) {
+      console.error('Error deleting game:', error);
+    }
+  });
+
   // Roll dice
   socket.on('roll-dice', async ({ gameId, playerId }) => {
     try {
-      const game = await getGameById(gameId);
+      const game: any = await getGameById(gameId);
       
       if (!game || game.currentTurn !== playerId) {
         socket.emit('error', { message: 'Not your turn' });
@@ -155,11 +202,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
         player.money += 200; // Pass Go, collect $200
       }
 
-      if (useMongoDB()) {
-        await game.save();
-      } else {
-        updateGame(gameId, game);
-      }
+      await saveGameState(gameId, game);
 
       io.to(gameId).emit('dice-rolled', {
         playerId,
@@ -170,9 +213,8 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
       });
 
       // Check what space player landed on
-      const property = game.boardState.find(p => p.position === newPosition);
+      const property = game.boardState.find((p: any) => p.position === newPosition);
       if (property) {
-        // Handle Debugging Card System (Chance/Community Chest)
         if (property.specialType === 'chance') {
           const card = getRandomChanceCard();
           applyCardEffect(game, player, card, io, gameId);
@@ -190,7 +232,6 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
             property: property.name,
           });
         } else {
-          // Broadcast to all players so they can see what space was landed on
           io.to(gameId).emit('landed-on-space', {
             playerId,
             property,
@@ -205,10 +246,10 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
     }
   });
 
-  // Buy property
-  socket.on('buy-property', async ({ gameId, playerId, propertyId, code, language }) => {
+  // Buy property (problem was solved client-side / on server)
+  socket.on('buy-property', async ({ gameId, playerId, propertyId }) => {
     try {
-      const game = await getGameById(gameId);
+      const game: any = await getGameById(gameId);
       
       if (!game) {
         socket.emit('error', { message: 'Game not found' });
@@ -227,11 +268,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
         return;
       }
 
-      // Get problem for this property - use in-memory problem bank
-      // For now, accept the code if it was validated client-side
-      // In production, you'd validate server-side too
-      
-      // Property purchase successful - Automated Solution Upgrade
+      // Property purchase successful
       property.ownerId = playerId;
       property.houses = 1; // First solution automatically added
       player.money -= property.price;
@@ -240,10 +277,11 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
       }
       player.properties.push(propertyId);
 
-      if (useMongoDB()) {
-        await game.save();
-      } else {
-        updateGame(gameId, game);
+      await saveGameState(gameId, game);
+
+      // Persist real-time problem solved stat for this player!
+      if (player.name) {
+        recordProblemSolved(player.name).catch(err => console.error('Error recording problem solved:', err));
       }
 
       const playerName = player.name || 'Player';
@@ -270,7 +308,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
   // Challenge to code duel
   socket.on('challenge-duel', async ({ gameId, challengerId, defenderId, propertyId }) => {
     try {
-      const game = await getGameById(gameId);
+      const game: any = await getGameById(gameId);
       
       if (!game) {
         socket.emit('error', { message: 'Game not found' });
@@ -283,7 +321,6 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
         return;
       }
 
-      // Create duel with a mock problem (in production, fetch from database)
       const mockProblem = {
         id: `problem-${Date.now()}`,
         title: 'Code Duel Challenge',
@@ -310,11 +347,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
         status: 'active',
       };
 
-      if (useMongoDB()) {
-        await game.save();
-      } else {
-        updateGame(gameId, game);
-      }
+      await saveGameState(gameId, game);
 
       io.to(gameId).emit('duel-started', {
         duel: game.activeDuel,
@@ -328,9 +361,9 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
   });
 
   // Submit code in duel
-  socket.on('submit-duel-code', async ({ gameId, playerId, code, language }) => {
+  socket.on('submit-duel-code', async ({ gameId, playerId }) => {
     try {
-      const game = await getGameById(gameId);
+      const game: any = await getGameById(gameId);
       
       if (!game || !game.activeDuel) {
         socket.emit('error', { message: 'No active duel' });
@@ -345,18 +378,19 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
         return;
       }
 
-      // For now, accept the submission (in production, validate server-side)
-      // Player solved it
+      const solvingPlayer = game.players.find((p: any) => p.id === playerId);
+      if (solvingPlayer?.name) {
+        recordProblemSolved(solvingPlayer.name).catch(err => console.error('Error recording duel solve:', err));
+      }
+
       const solvedKey = isChallenger ? 'challengerSolved' : 'defenderSolved';
       game.activeDuel[solvedKey] = true;
       game.activeDuel[isChallenger ? 'challengerTime' : 'defenderTime'] = Date.now() - new Date(game.activeDuel.startTime).getTime();
       
-      // Check if duel is over
       const challengerSolved = isChallenger || game.activeDuel.challengerSolved;
       const defenderSolved = isDefender || game.activeDuel.defenderSolved;
 
       if (challengerSolved && defenderSolved) {
-        // Both solved - faster wins
         const challengerTime = game.activeDuel.challengerTime || Infinity;
         const defenderTime = game.activeDuel.defenderTime || Infinity;
         
@@ -366,7 +400,6 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
           game.activeDuel.status = 'defender-won';
         }
       } else if (challengerSolved || defenderSolved) {
-        // One solved first - they win
         if (challengerSolved) {
           game.activeDuel.status = 'challenger-won';
         } else {
@@ -374,11 +407,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
         }
       }
 
-      if (useMongoDB()) {
-        await game.save();
-      } else {
-        updateGame(gameId, game);
-      }
+      await saveGameState(gameId, game);
 
       io.to(gameId).emit('duel-progress', {
         playerId,
@@ -387,7 +416,6 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
       });
 
       if (game.activeDuel.status !== 'active') {
-        // Duel is over
         await handleDuelEnd(game, io);
       }
     } catch (error) {
@@ -399,7 +427,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
   // End turn (for manual turn ending or skipping)
   socket.on('end-turn', async ({ gameId, playerId }) => {
     try {
-      const game = await getGameById(gameId);
+      const game: any = await getGameById(gameId);
       
       if (!game || game.currentTurn !== playerId) {
         socket.emit('error', { message: 'Not your turn' });
@@ -416,7 +444,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
   // Pay rent
   socket.on('pay-rent', async ({ gameId, playerId, propertyId }) => {
     try {
-      const game = await getGameById(gameId);
+      const game: any = await getGameById(gameId);
       
       if (!game) {
         socket.emit('error', { message: 'Game not found' });
@@ -436,11 +464,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
       player.money -= rent;
       owner.money += rent;
 
-      if (useMongoDB()) {
-        await game.save();
-      } else {
-        updateGame(gameId, game);
-      }
+      await saveGameState(gameId, game);
 
       io.to(gameId).emit('rent-paid', {
         playerId,
@@ -465,7 +489,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
   // Upgrade property
   socket.on('upgrade-property', async ({ gameId, playerId, propertyId }) => {
     try {
-      const game = await getGameById(gameId);
+      const game: any = await getGameById(gameId);
       
       if (!game) {
         socket.emit('error', { message: 'Game not found' });
@@ -489,11 +513,7 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
       property.houses += 1;
       player.money -= houseCost;
 
-      if (useMongoDB()) {
-        await game.save();
-      } else {
-        updateGame(gameId, game);
-      }
+      await saveGameState(gameId, game);
 
       io.to(gameId).emit('property-upgraded', {
         playerId,
@@ -514,17 +534,12 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
   // Game time up
   socket.on('game-time-up', async ({ gameId }) => {
     try {
-      const game = await getGameById(gameId);
+      const game: any = await getGameById(gameId);
       
       if (!game) return;
 
       game.status = 'finished';
-
-      if (useMongoDB()) {
-        await game.save();
-      } else {
-        updateGame(gameId, game);
-      }
+      await saveGameState(gameId, game);
 
       const winnerName = computeWinnerName(game.players);
       await recordGameResult(game.players, winnerName);
@@ -538,21 +553,14 @@ export function setupSocketHandlers(io: Server, socket: Socket) {
   // Get game state
   socket.on('get-game-state', async ({ gameId }) => {
     try {
-      const game = await getGameById(gameId);
+      const game: any = await getGameById(gameId);
       
       if (!game) {
         socket.emit('error', { message: 'Game not found' });
         return;
       }
 
-      // Ensure boardState exists and is properly formatted
-      const gameState = {
-        ...game.toObject ? game.toObject() : game,
-        boardState: game.boardState || [],
-        players: game.players || [],
-      };
-
-      socket.emit('game-state', gameState);
+      socket.emit('game-state', serializeGameState(game));
     } catch (error) {
       console.error('Error getting game state:', error);
       socket.emit('error', { message: 'Failed to get game state' });
@@ -567,26 +575,20 @@ async function handleDuelEnd(game: any, io: Server) {
   const defender = game.players.find((p: any) => p.id === duel.defenderId);
 
   if (duel.status === 'challenger-won') {
-    // Challenger wins - no rent, steal house
     if (property.houses > 0) {
       property.houses -= 1;
     }
   } else {
-    // Defender wins - challenger pays double rent
     const rent = calculateRent(property);
     challenger.money -= rent * 2;
     defender.money += rent * 2;
   }
 
   game.activeDuel = undefined;
-  
-  if (useMongoDB()) {
-    await game.save();
-  } else {
-    updateGame(game._id.toString(), game);
-  }
+  const gameId = game._id ? String(game._id) : game.id;
+  await saveGameState(gameId, game);
 
-  io.to(game._id.toString()).emit('duel-ended', {
+  io.to(gameId).emit('duel-ended', {
     winner: duel.status === 'challenger-won' ? duel.challengerId : duel.defenderId,
     result: duel.status,
   });
@@ -614,29 +616,22 @@ function applyCardEffect(game: any, player: any, card: DebuggingCard, io: Server
     });
   }
   
-  if (useMongoDB()) {
-    game.save();
-  } else {
-    updateGame(gameId, game);
-  }
+  saveGameState(gameId, game).catch(err => console.error('Error applying card effect:', err));
 }
 
 function calculateRent(property: any): number {
   const baseRent = property.rent || 0;
   const numSolutions = property.houses || 0;
   
-  // Determine difficulty multiplier based on property price/category
-  let difficultyMultiplier = 1.0; // Easy (default)
+  let difficultyMultiplier = 1.0;
   if (property.price > 200) {
-    difficultyMultiplier = 2.0; // Hard
+    difficultyMultiplier = 2.0;
   } else if (property.price > 100) {
-    difficultyMultiplier = 1.5; // Medium
+    difficultyMultiplier = 1.5;
   }
   
-  // Dynamic rent formula: Base Rent × (1 + (Number of Solutions × Difficulty Multiplier))
   const rent = baseRent * (1 + (numSolutions * difficultyMultiplier));
   
-  // Fallback to original calculation if houses array exists
   if (property.rentWithHouse && property.rentWithHouse.length > 0) {
     if (numSolutions === 0) {
       return baseRent;
@@ -649,4 +644,5 @@ function calculateRent(property: any): number {
   
   return Math.round(rent);
 }
+
 

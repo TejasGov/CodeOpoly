@@ -6,6 +6,7 @@ export interface PlayerProfile {
   username: string;
   avatar: string;
   gamesPlayed: number;
+  roundsPlayed: number;
   wins: number;
   losses: number;
   totalEarnings: number;

@@ -3,7 +3,7 @@ export interface Challenge {
   title: string;
   description: string;
   difficulty: 'easy' | 'medium' | 'hard';
-  category: 'arrays' | 'strings' | 'dp' | 'graphs' | 'trees' | 'sql' | 'system-design';
+  category: 'arrays' | 'strings' | 'dp' | 'graphs' | 'trees' | 'sql' | 'system-design' | 'linked-lists' | string;
   template: string;
   functionName: string;
   testCases: Array<{
@@ -11,7 +11,7 @@ export interface Challenge {
     expectedOutput: any;
     description?: string;
   }>;
-  examples: Array<{
+  examples?: Array<{
     input: string;
     output: string;
     explanation?: string;
