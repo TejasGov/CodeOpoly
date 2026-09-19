@@ -1,65 +1,106 @@
 # CodeOpoly 🎮💻
 
-**Competitive Coding Meets Monopoly**
+**Competitive Coding Meets Monopoly** — a real-time multiplayer game that combines the classic
+Monopoly board with LeetCode-style coding challenges. Solve problems to earn money, buy
+properties, and challenge opponents to code duels instead of paying rent.
 
-A multiplayer game that combines the classic Monopoly board game with LeetCode-style coding challenges. Solve problems faster to earn Compute Credits, buy properties, and dominate the board!
+## Architecture
 
-## 🚀 Features
+- **Frontend**: React 18 + TypeScript + Vite + Tailwind CSS (`client/`)
+- **Backend**: Node.js + Express + Socket.io (`server/`)
+- **Database**: MongoDB via Mongoose, with an in-memory fallback store if MongoDB isn't connected
+- **Code Execution**: Judge0 API (via RapidAPI)
+- **Auth**: Firebase Authentication (Google / Microsoft OAuth)
 
-### Core Mechanics
-- **Roll Dice → Solve Problem → Buy Property**: Classic Monopoly gameplay with a coding twist
-- **Code Duels**: Challenge property owners to avoid paying rent
-- **Property Types = Problem Types**: Different properties require different coding skills
-- **Debug Hell (Jail)**: Fix buggy code to get out of jail
-- **Community Chest & Chance**: Live coding events and modifiers
-
-### Revolutionary Additions
-- 🎯 **Code or Pay Rent**: Challenge opponents to code duels
-- 🏠 **Property Upgrades**: Build servers (houses) and data centers (hotels)
-- 🎲 **Live Events**: Code sprints, chaos mode, and more
-- 🐛 **Debug Challenges**: Fix intentionally broken code
-- 💰 **Compute Credits**: Earn money by solving problems faster
-
-## 🛠️ Tech Stack
-
-- **Frontend**: Next.js 14, React, TypeScript
-- **Styling**: Tailwind CSS
-- **Code Editor**: Monaco Editor
-- **Real-time**: Firebase Firestore
-- **Animations**: Framer Motion
-
-## 📦 Installation
-
-```bash
-npm install
+```
+CodeOpoly/
+├── client/            # Vite React frontend
+│   └── src/
+│       ├── components/
+│       ├── pages/
+│       ├── hooks/
+│       ├── services/
+│       └── data/
+└── server/            # Express + Socket.io backend
+    └── src/
+        ├── models/    # Mongoose schemas
+        ├── routes/
+        ├── socket/
+        └── utils/
 ```
 
-## 🚀 Development
+## Game Features
+
+- Real-time multiplayer (2–4 players) over Socket.io
+- 40-space Monopoly board with tech-themed properties
+- Solve coding problems to buy properties
+- Code duels: challenge a property owner to avoid paying rent
+- Property upgrades (houses/hotels), Debug Hell (jail with bug-fixing), Chance/Community Chest events
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- MongoDB (local or Atlas) — optional, falls back to an in-memory store if not connected
+- A RapidAPI account for Judge0 code execution
+
+### 1. Install dependencies
 
 ```bash
-npm run dev
+cd server && npm install
+cd ../client && npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to see the game.
+### 2. Configure environment variables
 
-## 🎮 How to Play
+**`server/.env`**
+```env
+PORT=5001
+MONGODB_URI=mongodb://localhost:27017/codeopoly
+CLIENT_URLS=http://localhost:3000
+RAPIDAPI_KEY=your-rapidapi-key-here
+JUDGE0_API_URL=https://judge0-ce.p.rapidapi.com
+```
 
-1. Create or join a game room
-2. Roll the dice to move around the board
-3. When you land on a property:
-   - If unowned: Solve a problem to buy it
-   - If owned: Pay rent or challenge to a code duel
-4. Solve problems faster to earn more Compute Credits
-5. Build servers and data centers to increase rent
-6. Win by having the most net worth or bankrupting opponents
+**`client/.env`**
+```env
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+```
 
-## 🎯 Game Modes
+> ⚠️ **Known issue**: `client/src/services/judge0Service.ts` currently calls the RapidAPI Judge0
+> endpoint directly from the browser using `VITE_JUDGE0_API_KEY`. Anything prefixed `VITE_` is
+> bundled into the client JS and is visible to anyone who opens dev tools — so if that key is
+> ever set, it's effectively public. The server already has its own `judge0Service.ts` wired into
+> `socketHandlers.ts`; code execution should be routed entirely through the server so the RapidAPI
+> key never ships to the browser. Not fixed yet — flagging so it isn't shipped as-is.
 
-- **Classic Mode**: Standard Monopoly rules with coding challenges
-- **Code Duel Mode**: Every rent payment can become a challenge
-- **Debug Hell**: Enhanced jail mechanics with bug fixing
+### 3. Run it
 
-## 📝 License
+```bash
+# Terminal 1
+cd server && npm run dev
+
+# Terminal 2
+cd client && npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+## Socket.io Events
+
+**Client → Server**: `join-game`, `roll-dice`, `buy-property`, `challenge-duel`,
+`submit-duel-code`, `end-turn`, `get-game-state`
+
+**Server → Client**: `joined-game`, `player-joined`, `dice-rolled`, `landed-on-space`,
+`property-bought`, `duel-started`, `duel-progress`, `duel-ended`, `turn-ended`, `game-state`
+
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## License
 
 MIT
-
